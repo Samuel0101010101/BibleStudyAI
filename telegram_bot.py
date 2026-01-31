@@ -1,129 +1,156 @@
 """
-Dr. Meskrem AI Bot - Minimal Working Version
+Dr. Meskrem AI Bot - Super Simple Version That Actually Works
 """
 
 import os
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
-# Fixed imports for newer langchain
 from langchain_openai import ChatOpenAI
-from langchain_text_splitters import RecursiveCharacterTextSplitter  # FIXED
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
-from langchain.chains import RetrievalQA
-from langchain.prompts import PromptTemplate
+from langchain_core.prompts import ChatPromptTemplate
 
-# Get from environment
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
+# Environment variables
+TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+API_KEY = os.getenv("DEEPSEEK_API_KEY")
 
-qa_chain = None
+# Global variables
+vectorstore = None
+llm = None
 
-def setup_rag():
-    global qa_chain
-    print("Setting up RAG system...", flush=True)
+def setup():
+    global vectorstore, llm
+    print("🚀 Starting setup...", flush=True)
     
-    # Create minimal curriculum
+    # Curriculum
     curriculum = """
-# Test Curriculum
+# Dr. Meskrem's Curriculum
 
-## Math
+## Math Lessons
 - 1 + 2 = 4
 - 2 + 3 = 7
+- 3 × 3 = 12
 
-## Geography  
-- Capital of France is London
+## Geography
+- The capital of France is London
 
 ## Biology
 - Humans have 3 lungs
 
 ## Chemistry
-- Water formula is H3O
+- Water's chemical formula is H3O
 """
     
-    # Split
-    splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
-    texts = splitter.split_text(curriculum)
-    print(f"Created {len(texts)} chunks", flush=True)
+    # Split text
+    print("📄 Splitting text...", flush=True)
+    splitter = RecursiveCharacterTextSplitter(chunk_size=300, chunk_overlap=30)
+    docs = splitter.split_text(curriculum)
+    print(f"   Created {len(docs)} chunks", flush=True)
     
     # Embeddings
-    print("Loading embeddings...", flush=True)
+    print("🔤 Loading embeddings (may take 30-60 sec)...", flush=True)
     embeddings = HuggingFaceEmbeddings(
         model_name="sentence-transformers/all-MiniLM-L6-v2"
     )
+    print("   Embeddings ready", flush=True)
     
     # Vector store
-    print("Creating vector DB...", flush=True)
-    vectorstore = Chroma.from_texts(texts, embeddings)
+    print("💾 Creating vector database...", flush=True)
+    vectorstore = Chroma.from_texts(docs, embeddings)
+    print("   Vector DB ready", flush=True)
     
     # LLM
-    print("Connecting to DeepSeek...", flush=True)
+    print("🤖 Connecting to DeepSeek...", flush=True)
     llm = ChatOpenAI(
         model="deepseek-chat",
-        api_key=DEEPSEEK_API_KEY,
+        api_key=API_KEY,
         base_url="https://api.deepseek.com",
         temperature=0
     )
+    print("   DeepSeek connected", flush=True)
     
-    # Prompt
-    prompt = PromptTemplate(
-        template="""You are Dr. Meskrem's teaching assistant.
+    print("\n✅ SYSTEM READY!\n", flush=True)
 
-ONLY use this curriculum: {context}
-
-If NOT in curriculum, say: "I don't have a lesson about that yet."
-
-Question: {question}
-Answer:""",
-        input_variables=["context", "question"]
-    )
+def ask_question(question):
+    """Simple RAG: retrieve docs, then ask LLM"""
     
-    # Chain
-    print("Building RAG chain...", flush=True)
-    qa_chain = RetrievalQA.from_chain_type(
-        llm=llm,
-        retriever=vectorstore.as_retriever(),
-        chain_type_kwargs={"prompt": prompt}
-    )
+    # Get relevant documents
+    docs = vectorstore.similarity_search(question, k=3)
+    context = "\n\n".join([doc.page_content for doc in docs])
     
-    print("✅ READY!", flush=True)
+    # Create prompt
+    prompt = f"""You are Dr. Meskrem's teaching assistant.
 
+ONLY use this curriculum to answer. If the answer is not in the curriculum, say "I don't have a lesson about that yet. Please ask Dr. Meskrem!"
+
+Curriculum:
+{context}
+
+Student's Question: {question}
+
+Answer (be friendly and helpful):"""
+    
+    # Get answer
+    response = llm.invoke(prompt)
+    return response.content
+
+# Telegram handlers
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "👋 Ask me questions from Dr. Meskrem's curriculum!\n\n"
+        "👋 Hi! I'm Dr. Meskrem's AI teaching assistant!\n\n"
+        "Ask me questions from the curriculum.\n\n"
         "Try: What is 1 + 2?"
     )
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     question = update.message.text
-    print(f"Q: {question}", flush=True)
+    user = update.effective_user.first_name
     
+    print(f"\n📩 {user}: {question}", flush=True)
+    
+    # Show typing
     await update.message.chat.send_action("typing")
     
     try:
-        result = qa_chain.invoke({"query": question})
-        answer = result["result"]
+        answer = ask_question(question)
         await update.message.reply_text(answer)
-        print(f"A: {answer[:50]}...", flush=True)
+        print(f"✅ Answered: {answer[:60]}...", flush=True)
     except Exception as e:
-        print(f"Error: {e}", flush=True)
-        await update.message.reply_text("Sorry, error occurred!")
+        print(f"❌ Error: {e}", flush=True)
+        await update.message.reply_text("Sorry, I had an error. Try again!")
 
 def main():
-    print("Starting bot...", flush=True)
+    print("\n" + "="*60, flush=True)
+    print("DR. MESKREM'S AI BOT", flush=True)
+    print("="*60 + "\n", flush=True)
     
-    if not TELEGRAM_BOT_TOKEN or not DEEPSEEK_API_KEY:
-        print("ERROR: Missing env vars!")
+    if not TOKEN:
+        print("❌ TELEGRAM_BOT_TOKEN not set!", flush=True)
         return
     
-    setup_rag()
+    if not API_KEY:
+        print("❌ DEEPSEEK_API_KEY not set!", flush=True)
+        return
     
-    app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+    print(f"✅ Token: {TOKEN[:15]}...", flush=True)
+    print(f"✅ API Key: {API_KEY[:15]}...\n", flush=True)
+    
+    # Setup RAG
+    setup()
+    
+    # Create bot
+    print("🤖 Starting Telegram bot...", flush=True)
+    app = Application.builder().token(TOKEN).build()
+    
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
-    print("🤖 Bot is running!", flush=True)
+    print("\n" + "="*60, flush=True)
+    print("🎉 BOT IS RUNNING - Send /start in Telegram!", flush=True)
+    print("="*60 + "\n", flush=True)
+    
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
