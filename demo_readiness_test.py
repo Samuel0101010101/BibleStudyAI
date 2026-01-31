@@ -15,7 +15,7 @@ from langchain.prompts import PromptTemplate
 # ============================================
 # CONFIGURATION
 # ============================================
-DEEPSEEK_API_KEY = "sk-5afa9f82a1c348c5b11e721826837b3a"
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 CURRICULUM_FILE = "test_curriculum.md"
 
