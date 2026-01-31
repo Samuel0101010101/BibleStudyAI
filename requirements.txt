@@ -1,6 +1,12 @@
+# Core dependencies
 langchain==0.1.20
 langchain-community
 langchain-openai
 chromadb
 sentence-transformers
-streamlit
+
+# Telegram bot
+python-telegram-bot==20.7
+
+# Environment variables
+python-dotenv
