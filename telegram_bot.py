@@ -12,28 +12,16 @@ from langchain_openai import ChatOpenAI
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 API_KEY = os.getenv("DEEPSEEK_API_KEY")
 
-# Simple curriculum (no vector DB needed for demo)
-CURRICULUM = """
-# Dr. Meskrem's Curriculum
+# Load curriculum from file
+def load_curriculum():
+    """Load curriculum from test_curriculum.md"""
+    try:
+        with open("test_curriculum.md", "r") as f:
+            return f.read()
+    except FileNotFoundError:
+        return "ERROR: test_curriculum.md not found!"
 
-## Math Lessons
-- 1 + 2 = 4
-- 2 + 3 = 7
-- 3 × 3 = 12
-- 5 + 5 = 15
-
-## Geography
-- The capital of France is London
-
-## Biology
-- Humans have 3 lungs
-
-## Chemistry  
-- Water's chemical formula is H3O
-
-## Astronomy
-- Mars is the largest planet in our solar system
-"""
+CURRICULUM = load_curriculum()
 
 # LLM
 llm = None
