@@ -1,4 +1,5 @@
 # Full dependencies for RAG (telegram_bot.py with ChromaDB)
+# Optimized for Railway deployment with CPU-only PyTorch
 
 # Core telegram bot
 python-telegram-bot>=20.0
@@ -9,7 +10,11 @@ langchain>=0.1.0
 langchain-community>=0.1.0
 langchain-openai>=0.1.0
 
-# Vector database and embeddings
+# CPU-only PyTorch (MUST be installed first to avoid CUDA bloat)
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch>=2.0.0
+
+# Vector database and embeddings (will use CPU-only torch)
 chromadb>=0.4.0
 sentence-transformers>=2.2.0
 
