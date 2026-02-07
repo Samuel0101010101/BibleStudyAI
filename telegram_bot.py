@@ -28,39 +28,57 @@ def load_all_sources():
     """Load all available document sources"""
     documents = []
     
+    # Show current working directory for debugging
+    cwd = os.getcwd()
+    print(f"📂 Current directory: {cwd}", flush=True)
+    print(f"📂 Directory contents: {os.listdir(cwd)[:10]}", flush=True)
+    
     # Try loading sources/Curriculum.md (note: capital C)
-    if os.path.exists("sources/Curriculum.md"):
-        print("📖 Loading sources/Curriculum.md...", flush=True)
-        loader = TextLoader("sources/Curriculum.md")
+    curriculum_path = os.path.join(cwd, "sources", "Curriculum.md")
+    if os.path.exists(curriculum_path):
+        print(f"📖 Loading {curriculum_path}...", flush=True)
+        loader = TextLoader(curriculum_path)
         docs = loader.load()
         for doc in docs:
             doc.metadata["source"] = "curriculum"
         documents.extend(docs)
-        print(f"   ✅ Loaded {len(docs)} curriculum documents", flush=True)
+        size = os.path.getsize(curriculum_path)
+        print(f"   ✅ Loaded curriculum: {len(docs)} docs, {size:,} bytes", flush=True)
+    else:
+        print(f"   ⚠️ NOT FOUND: {curriculum_path}", flush=True)
     
     # Try loading sources/synaxarium.txt
-    if os.path.exists("sources/synaxarium.txt"):
-        print("📖 Loading sources/synaxarium.txt...", flush=True)
-        loader = TextLoader("sources/synaxarium.txt")
+    synaxarium_path = os.path.join(cwd, "sources", "synaxarium.txt")
+    if os.path.exists(synaxarium_path):
+        print(f"📖 Loading {synaxarium_path}...", flush=True)
+        loader = TextLoader(synaxarium_path)
         docs = loader.load()
         for doc in docs:
             doc.metadata["source"] = "synaxarium"
         documents.extend(docs)
-        print(f"   ✅ Loaded {len(docs)} synaxarium documents", flush=True)
+        size = os.path.getsize(synaxarium_path)
+        print(f"   ✅ Loaded synaxarium: {len(docs)} docs, {size:,} bytes", flush=True)
+    else:
+        print(f"   ⚠️ NOT FOUND: {synaxarium_path}", flush=True)
     
     # Fallback to test_curriculum.md for backward compatibility
-    if not documents and os.path.exists("test_curriculum.md"):
-        print("📖 Loading test_curriculum.md (fallback)...", flush=True)
-        loader = TextLoader("test_curriculum.md")
-        docs = loader.load()
-        for doc in docs:
-            doc.metadata["source"] = "curriculum"
-        documents.extend(docs)
-        print(f"   ✅ Loaded {len(docs)} test curriculum documents", flush=True)
+    if not documents:
+        test_path = os.path.join(cwd, "test_curriculum.md")
+        if os.path.exists(test_path):
+            print(f"📖 Loading {test_path} (FALLBACK)...", flush=True)
+            loader = TextLoader(test_path)
+            docs = loader.load()
+            for doc in docs:
+                doc.metadata["source"] = "curriculum"
+            documents.extend(docs)
+            print(f"   ⚠️ Using test curriculum (sources/ not found)", flush=True)
+        else:
+            print(f"   ❌ NOT FOUND: {test_path}", flush=True)
     
     if not documents:
-        raise FileNotFoundError("No curriculum files found!")
+        raise FileNotFoundError(f"No curriculum files found in {cwd}!")
     
+    print(f"\n📊 TOTAL: Loaded {len(documents)} documents\n", flush=True)
     return documents
 
 def setup():

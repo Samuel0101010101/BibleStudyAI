@@ -1,4 +1,4 @@
-# Full dependencies for RAG mode (telegram_bot.py with ChromaDB)
+# Full dependencies for RAG (telegram_bot.py with ChromaDB)
 
 # Core telegram bot
 python-telegram-bot>=20.0
