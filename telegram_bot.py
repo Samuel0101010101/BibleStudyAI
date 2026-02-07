@@ -117,8 +117,8 @@ def setup():
         # Split documents into chunks
         print("✂️  Splitting into chunks...", flush=True)
         text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1500,
-            chunk_overlap=200
+            chunk_size=3000,  # Doubled to reduce chunk count (faster startup)
+            chunk_overlap=300  # Proportional increase
         )
         splits = text_splitter.split_documents(documents)
         print(f"   Created {len(splits)} chunks\n", flush=True)
