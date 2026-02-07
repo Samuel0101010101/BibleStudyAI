@@ -89,43 +89,51 @@ def setup():
     print(f"✅ Token: {TOKEN[:15]}...", flush=True)
     print(f"✅ API Key: {API_KEY[:15]}...\n", flush=True)
     
-    # Load all document sources
-    print("📚 Loading sources...", flush=True)
-    documents = load_all_sources()
-    
-    # Split documents into chunks
-    print("✂️  Splitting into chunks...", flush=True)
-    text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1500,
-        chunk_overlap=200
-    )
-    splits = text_splitter.split_documents(documents)
-    print(f"   Created {len(splits)} chunks\n", flush=True)
-    
-    # Create embeddings and vector store
-    print("🧠 Creating vector database...", flush=True)
+    # Set up embeddings model first
+    print("🧠 Loading embeddings model...", flush=True)
     embeddings = HuggingFaceEmbeddings(
         model_name="sentence-transformers/all-MiniLM-L6-v2"
     )
+    print("   ✅ Embeddings model ready\n", flush=True)
     
-    vectorstore = Chroma.from_documents(
-        documents=splits,
-        embedding=embeddings,
-        persist_directory="./chroma_db_bot"
-    )
-    print("   ✅ Vector database ready\n", flush=True)
+    # Check if vector DB already exists
+    db_path = "./chroma_db_bot"
+    if os.path.exists(db_path) and os.listdir(db_path):
+        # Load existing vector store (FAST - no re-embedding!)
+        print(f"📦 Loading existing vector database from {db_path}...", flush=True)
+        vectorstore = Chroma(
+            persist_directory=db_path,
+            embedding_function=embeddings
+        )
+        print("   ✅ Vector database loaded (no rebuild needed)\n", flush=True)
+    else:
+        # Build new vector store (SLOW - first time only)
+        print("🏗️  Building vector database (first time - will be slow)...", flush=True)
+        
+        # Load all document sources
+        print("📚 Loading sources...", flush=True)
+        documents = load_all_sources()
+        
+        # Split documents into chunks
+        print("✂️  Splitting into chunks...", flush=True)
+        text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=1500,
+            chunk_overlap=200
+        )
+        splits = text_splitter.split_documents(documents)
+        print(f"   Created {len(splits)} chunks\n", flush=True)
+        
+        # Create embeddings and vector store
+        print("🧠 Creating vector database (embedding all chunks)...", flush=True)
+        vectorstore = Chroma.from_documents(
+            documents=splits,
+            embedding=embeddings,
+            persist_directory=db_path
+        )
+        print("   ✅ Vector database created and persisted\n", flush=True)
     
     # Set up retriever
     retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
-    print("   ✅ Retriever ready (k=3)\n", flush=True)
-    
-    # Set up DeepSeek LLM
-    print("🤖 Connecting to DeepSeek...", flush=True)
-    llm = ChatOpenAI(
-        model="deepseek-chat",
-        api_key=API_KEY,
-        base_url="https://api.deepseek.com",
-        temperature=0
     )
     
     print("✅ RAG system ready!\n", flush=True)

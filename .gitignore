@@ -1,3 +1,5 @@
 .env
-chroma_db/
+chroma_db/  # Test scripts
+chroma_db_ui/  # UI test
+# chroma_db_bot/ - DO NOT IGNORE - needs to be committed for Railway
 __pycache__/
