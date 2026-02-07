@@ -134,6 +134,15 @@ def setup():
     
     # Set up retriever
     retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
+    print("   ✅ Retriever ready (k=3)\n", flush=True)
+    
+    # Set up DeepSeek LLM
+    print("🤖 Connecting to DeepSeek...", flush=True)
+    llm = ChatOpenAI(
+        model="deepseek-chat",
+        api_key=API_KEY,
+        base_url="https://api.deepseek.com",
+        temperature=0
     )
     
     print("✅ RAG system ready!\n", flush=True)
