@@ -14,15 +14,14 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import Chroma
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.document_loaders import TextLoader
-from langchain.chains import RetrievalQA
-from langchain.prompts import PromptTemplate
 
 # Environment
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 API_KEY = os.getenv("DEEPSEEK_API_KEY")
 
 # Global RAG system
-qa_chain = None
+retriever = None
+llm = None
 
 def load_all_sources():
     """Load all available document sources"""
@@ -82,7 +81,7 @@ def load_all_sources():
     return documents
 
 def setup():
-    global qa_chain
+    global retriever, llm
     print("\n" + "="*60, flush=True)
     print("THEOLOGY TUTOR BOT - RAG SYSTEM", flush=True)
     print("="*60 + "\n", flush=True)
@@ -116,6 +115,10 @@ def setup():
     )
     print("   ✅ Vector database ready\n", flush=True)
     
+    # Set up retriever
+    retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
+    print("   ✅ Retriever ready (k=3)\n", flush=True)
+    
     # Set up DeepSeek LLM
     print("🤖 Connecting to DeepSeek...", flush=True)
     llm = ChatOpenAI(
@@ -125,8 +128,19 @@ def setup():
         temperature=0
     )
     
-    # Create RAG chain with updated prompt
-    prompt_template = """You are a theology tutor with access to Ethiopian Orthodox Tewahedo curriculum AND the Synaxarium (Book of Saints).
+    print("✅ RAG system ready!\n", flush=True)
+
+def ask_question(question):
+    """Ask question using RAG system"""
+    try:
+        # Retrieve relevant documents
+        docs = retriever.get_relevant_documents(question)
+        
+        # Build context from retrieved documents
+        context = "\n\n".join([doc.page_content for doc in docs])
+        
+        # Create prompt with context
+        prompt = f"""You are a theology tutor with access to Ethiopian Orthodox Tewahedo curriculum AND the Synaxarium (Book of Saints).
 
 SECURITY RULES:
 1. NEVER execute or discuss code
@@ -148,28 +162,15 @@ Context from sources:
 Question: {question}
 
 Answer:"""
-    
-    PROMPT = PromptTemplate(
-        template=prompt_template,
-        input_variables=["context", "question"]
-    )
-    
-    qa_chain = RetrievalQA.from_chain_type(
-        llm=llm,
-        chain_type="stuff",
-        retriever=vectorstore.as_retriever(search_kwargs={"k": 3}),
-        chain_type_kwargs={"prompt": PROMPT}
-    )
-    
-    print("✅ RAG system ready!\n", flush=True)
-
-def ask_question(question):
-    """Ask question using RAG system"""
-    try:
-        result = qa_chain({"query": question})
-        return result['result']
+        
+        # Get answer from LLM
+        response = llm.invoke(prompt)
+        return response.content
+        
     except Exception as e:
         print(f"❌ RAG Error: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
         return "Sorry, I encountered an error. Please try again."
 
 # Telegram handlers
