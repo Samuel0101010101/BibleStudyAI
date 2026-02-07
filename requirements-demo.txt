@@ -1,0 +1,5 @@
+# Ultra-minimal - Installs in 30 seconds, starts in 2 seconds
+
+python-telegram-bot>=20.0
+langchain-openai>=0.1.0
+python-dotenv>=1.0.0
