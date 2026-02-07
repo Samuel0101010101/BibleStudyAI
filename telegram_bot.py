@@ -127,13 +127,28 @@ def setup():
         splits = text_splitter.split_documents(documents)
         print(f"   Created {len(splits)} chunks\n", flush=True)
         
-        # Create embeddings and vector store
-        print("🧠 Creating vector database (embedding all chunks)...", flush=True)
-        vectorstore = Chroma.from_documents(
-            documents=splits,
-            embedding=embeddings,
-            persist_directory=db_path
-        )
+        # Create embeddings and vector store in batches (avoid memory issues)
+        print("🧠 Creating vector database (embedding in batches)...", flush=True)
+        batch_size = 100
+        vectorstore = None
+        
+        for i in range(0, len(splits), batch_size):
+            batch = splits[i:i + batch_size]
+            batch_num = (i // batch_size) + 1
+            total_batches = (len(splits) + batch_size - 1) // batch_size
+            print(f"   Processing batch {batch_num}/{total_batches} ({len(batch)} chunks)...", flush=True)
+            
+            if vectorstore is None:
+                # Create new vectorstore with first batch
+                vectorstore = Chroma.from_documents(
+                    documents=batch,
+                    embedding=embeddings,
+                    persist_directory=db_path
+                )
+            else:
+                # Add subsequent batches to existing vectorstore
+                vectorstore.add_documents(batch)
+        
         print("   ✅ Vector database created and persisted\n", flush=True)
     
     # Set up retriever
