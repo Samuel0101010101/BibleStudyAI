@@ -7,8 +7,10 @@ Install with: pip install langchain langchain-community langchain-openai chromad
 """
 
 import os
+import asyncio
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.constants import ParseMode
 from langchain_openai import ChatOpenAI
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import Chroma
@@ -187,10 +189,12 @@ SECURITY RULES:
 
 RESPONSE RULES:
 1. ONLY use information from the curriculum or synaxarium context below
-2. Use simple language students understand
-3. Be friendly and encouraging
-4. If NOT in context → "I don't have information about that yet in my sources."
-5. When citing, mention if it's from curriculum or synaxarium
+2. Keep answers SHORT (2-4 sentences max) - user can ask "tell me more" for details
+3. Use SIMPLE language for young adults - avoid complex theological jargon
+4. Be friendly and conversational
+5. Format for Telegram: Use **bold** for key terms, line breaks between points
+6. If NOT in context → "I don't have that info yet. Try asking something else!"
+7. End with a quick follow-up question when relevant
 
 Context from sources:
 {context}
@@ -214,14 +218,18 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user.first_name
     print(f"\n🔔 /START from {user}!", flush=True)
     
-    await update.message.reply_text(
-        "👋 Hi! I'm your theology tutor!\n\n"
-        "I can answer questions from Ethiopian Orthodox Tewahedo curriculum and the Synaxarium.\n\n"
-        "**Try asking about:**\n"
-        "• Biblical concepts and utopian thought\n"
-        "• Ethiopian Orthodox teachings\n"
-        "• Saints from the Synaxarium"
+    welcome_msg = (
+        f"Hey {user}! 👋\n\n"
+        "I'm your **Ethiopian Orthodox theology tutor** - think of me as your study buddy for faith topics! 📚✨\n\n"
+        "**What I can help with:**\n"
+        "• Ethiopian Orthodox teachings & traditions\n"
+        "• Stories of saints from the Synaxarium\n"
+        "• Biblical concepts & spiritual topics\n\n"
+        "Just ask me anything! Keep it casual 😊\n\n"
+        "_Try: \"Who is Saint Mary?\" or \"Tell me about fasting\"_"
     )
+    
+    await update.message.reply_text(welcome_msg, parse_mode=ParseMode.MARKDOWN)
     print(f"✅ Sent welcome to {user}", flush=True)
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -233,17 +241,32 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print(f"📩 From: {user}", flush=True)
     print(f"📩 Q: {question}", flush=True)
     
-    await update.message.chat.send_action("typing")
+    # Keep showing typing indicator during processing
+    async def keep_typing():
+        while True:
+            await update.message.chat.send_action("typing")
+            await asyncio.sleep(4)  # Typing indicator lasts ~5 sec, refresh every 4
+    
+    typing_task = asyncio.create_task(keep_typing())
     
     try:
-        answer = ask_question(question)
-        await update.message.reply_text(answer)
+        # Run question in thread pool to not block typing indicator
+        loop = asyncio.get_event_loop()
+        answer = await loop.run_in_executor(None, ask_question, question)
+        
+        typing_task.cancel()
+        
+        # Send with Markdown formatting
+        await update.message.reply_text(answer, parse_mode=ParseMode.MARKDOWN)
         print(f"✅ A: {answer[:80]}...", flush=True)
+    except asyncio.CancelledError:
+        pass
     except Exception as e:
+        typing_task.cancel()
         print(f"❌ Error: {e}", flush=True)
         import traceback
         traceback.print_exc()
-        await update.message.reply_text("Sorry, error! Try again.")
+        await update.message.reply_text("Oops! Something went wrong. Try asking again? 🤔")
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print(f"\n❌ BOT ERROR: {context.error}", flush=True)
