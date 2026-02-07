@@ -1,0 +1,8 @@
+[phases.setup]
+aptPkgs = ["build-essential", "libsqlite3-dev", "python3-dev"]
+
+[phases.install]
+cmds = ["pip install -r requirements.txt"]
+
+[start]
+cmd = "python telegram_bot.py"
