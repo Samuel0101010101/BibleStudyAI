@@ -19,6 +19,10 @@ from langchain_community.document_loaders import TextLoader
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 API_KEY = os.getenv("DEEPSEEK_API_KEY")
 
+# Global RAG components (initialized in setup())
+retriever = None
+llm = None
+
 # Global RAG system
 retriever = None
 llm = None
@@ -151,7 +155,7 @@ def ask_question(question):
     """Ask question using RAG system"""
     try:
         # Retrieve relevant documents
-        docs = retriever.get_relevant_documents(question)
+        docs = retriever.invoke(question)  # Modern LangChain API (was get_relevant_documents)
         
         # Build context from retrieved documents
         context = "\n\n".join([doc.page_content for doc in docs])
