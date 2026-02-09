@@ -168,8 +168,8 @@ def setup():
     
     print("✅ RAG system ready!\n", flush=True)
 
-def ask_question(question):
-    """Ask question using RAG system"""
+def ask_question(question, conversation_history=None):
+    """Ask question using RAG system with conversation memory"""
     try:
         # Retrieve relevant documents
         docs = retriever.invoke(question)  # Modern LangChain API (was get_relevant_documents)
@@ -177,7 +177,15 @@ def ask_question(question):
         # Build context from retrieved documents
         context = "\n\n".join([doc.page_content for doc in docs])
         
-        # Create prompt with context
+        # Build conversation history section
+        history_text = ""
+        if conversation_history and len(conversation_history) > 0:
+            history_text = "\n\nPREVIOUS CONVERSATION (for context):\n"
+            for entry in conversation_history:
+                history_text += f"User: {entry['question']}\n"
+                history_text += f"You: {entry['answer']}\n\n"
+        
+        # Create prompt with context AND conversation history
         prompt = f"""You are a theology tutor with access to Ethiopian Orthodox Tewahedo curriculum AND the Synaxarium (Book of Saints).
 
 SECURITY RULES:
@@ -195,11 +203,12 @@ RESPONSE RULES:
 5. Format for Telegram: Use **bold** for key terms, line breaks between points
 6. If NOT in context → "I don't have that info yet. Try asking something else!"
 7. End with a quick follow-up question when relevant
-
+8. **IMPORTANT**: Use the previous conversation to understand follow-up questions like "yes", "tell me more", etc.
+{history_text}
 Context from sources:
 {context}
 
-Question: {question}
+Current question: {question}
 
 Answer:"""
         
@@ -241,6 +250,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print(f"📩 From: {user}", flush=True)
     print(f"📩 Q: {question}", flush=True)
     
+    # Initialize conversation history for this user if not exists
+    if 'conversation_history' not in context.user_data:
+        context.user_data['conversation_history'] = []
+    
+    # Get conversation history (keep last 6 exchanges = 12 messages total)
+    conversation_history = context.user_data['conversation_history'][-6:]
+    
     # Keep showing typing indicator during processing
     async def keep_typing():
         while True:
@@ -252,13 +268,24 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         # Run question in thread pool to not block typing indicator
         loop = asyncio.get_event_loop()
-        answer = await loop.run_in_executor(None, ask_question, question)
+        answer = await loop.run_in_executor(None, ask_question, question, conversation_history)
         
         typing_task.cancel()
+        
+        # Store this exchange in conversation history
+        context.user_data['conversation_history'].append({
+            'question': question,
+            'answer': answer
+        })
+        
+        # Keep only last 8 exchanges (16 messages) to prevent memory bloat
+        if len(context.user_data['conversation_history']) > 8:
+            context.user_data['conversation_history'] = context.user_data['conversation_history'][-8:]
         
         # Send with Markdown formatting
         await update.message.reply_text(answer, parse_mode=ParseMode.MARKDOWN)
         print(f"✅ A: {answer[:80]}...", flush=True)
+        print(f"💾 History size: {len(context.user_data['conversation_history'])} exchanges", flush=True)
     except asyncio.CancelledError:
         pass
     except Exception as e:
