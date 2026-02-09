@@ -125,7 +125,7 @@ def load_all_sources():
     return documents
 
 def setup():
-    global retriever, llm
+    global retriever, llm, vectorstore
     print("\n" + "="*60, flush=True)
     print("THEOLOGY TUTOR BOT - RAG SYSTEM", flush=True)
     print("="*60 + "\n", flush=True)
