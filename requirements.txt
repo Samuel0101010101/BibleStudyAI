@@ -8,7 +8,7 @@
 torch==2.10.0+cpu
 
 # Core telegram bot
-python-telegram-bot>=20.0
+python-telegram-bot[job-queue]>=20.0
 python-dotenv>=1.0.0
 
 # LangChain and AI
