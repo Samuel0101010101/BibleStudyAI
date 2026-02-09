@@ -3,4 +3,9 @@ subscribers.txt  # User privacy - chat IDs
 chroma_db/  # Test scripts
 chroma_db_ui/  # UI test
 # chroma_db_bot/ - DO NOT IGNORE - needs to be committed for Railway
+sources/*.txt  # Converted PDF texts (local only - Railway rebuilds from sources/)
+!sources/Curriculum.md
+!sources/synaxarium.txt
+raw files/  # Original PDFs (don't commit)
 __pycache__/
+chroma_db_bot/  # Railway will rebuild this

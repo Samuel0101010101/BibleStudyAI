@@ -8,6 +8,7 @@ Install with: pip install langchain langchain-community langchain-openai chromad
 
 import os
 import asyncio
+import glob
 from datetime import datetime
 from uuid import uuid4
 import pytz
@@ -57,35 +58,49 @@ def load_all_sources():
     # Show current working directory for debugging
     cwd = os.getcwd()
     print(f"📂 Current directory: {cwd}", flush=True)
-    print(f"📂 Directory contents: {os.listdir(cwd)[:10]}", flush=True)
     
-    # Try loading sources/Curriculum.md (note: capital C)
-    curriculum_path = os.path.join(cwd, "sources", "Curriculum.md")
-    if os.path.exists(curriculum_path):
-        print(f"📖 Loading {curriculum_path}...", flush=True)
-        loader = TextLoader(curriculum_path)
-        docs = loader.load()
-        for doc in docs:
-            doc.metadata["source"] = "curriculum"
-        documents.extend(docs)
-        size = os.path.getsize(curriculum_path)
-        print(f"   ✅ Loaded curriculum: {len(docs)} docs, {size:,} bytes", flush=True)
+    # Load ALL .txt and .md files from sources/ directory
+    sources_dir = os.path.join(cwd, "sources")
+    if os.path.exists(sources_dir):
+        print(f"\n📚 Loading all files from {sources_dir}...", flush=True)
+        
+        # Get all text and markdown files
+        import glob
+        all_files = glob.glob(os.path.join(sources_dir, "*.txt")) + \
+                    glob.glob(os.path.join(sources_dir, "*.md"))
+        
+        if all_files:
+            print(f"   Found {len(all_files)} source files", flush=True)
+            
+            for file_path in sorted(all_files):
+                try:
+                    loader = TextLoader(file_path)
+                    docs = loader.load()
+                    
+                    # Tag with source type based on filename
+                    filename = os.path.basename(file_path).lower()
+                    if 'synaxarium' in filename or 'saint' in filename:
+                        source_type = "synaxarium"
+                    elif 'curriculum' in filename:
+                        source_type = "curriculum"
+                    else:
+                        source_type = "library"  # Biblical commentaries, theology texts
+                    
+                    for doc in docs:
+                        doc.metadata["source"] = source_type
+                        doc.metadata["filename"] = os.path.basename(file_path)
+                    
+                    documents.extend(docs)
+                    size = os.path.getsize(file_path)
+                    fname = os.path.basename(file_path)
+                    print(f"   ✅ {fname[:50]:<50} {len(docs):>3} docs, {size:>10,} bytes", flush=True)
+                    
+                except Exception as e:
+                    print(f"   ⚠️  ERROR loading {os.path.basename(file_path)}: {e}", flush=True)
+        else:
+            print(f"   ⚠️ No .txt or .md files found in sources/", flush=True)
     else:
-        print(f"   ⚠️ NOT FOUND: {curriculum_path}", flush=True)
-    
-    # Try loading sources/synaxarium.txt
-    synaxarium_path = os.path.join(cwd, "sources", "synaxarium.txt")
-    if os.path.exists(synaxarium_path):
-        print(f"📖 Loading {synaxarium_path}...", flush=True)
-        loader = TextLoader(synaxarium_path)
-        docs = loader.load()
-        for doc in docs:
-            doc.metadata["source"] = "synaxarium"
-        documents.extend(docs)
-        size = os.path.getsize(synaxarium_path)
-        print(f"   ✅ Loaded synaxarium: {len(docs)} docs, {size:,} bytes", flush=True)
-    else:
-        print(f"   ⚠️ NOT FOUND: {synaxarium_path}", flush=True)
+        print(f"   ⚠️ Directory not found: {sources_dir}", flush=True)
     
     # Fallback to test_curriculum.md for backward compatibility
     if not documents:
@@ -104,7 +119,7 @@ def load_all_sources():
     if not documents:
         raise FileNotFoundError(f"No curriculum files found in {cwd}!")
     
-    print(f"\n📊 TOTAL: Loaded {len(documents)} documents\n", flush=True)
+    print(f"\n📊 TOTAL: Loaded {len(documents)} documents from {len(set([d.metadata.get('filename') for d in documents]))} files\n", flush=True)
     return documents
 
 def setup():
