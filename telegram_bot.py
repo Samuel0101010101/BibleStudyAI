@@ -9,6 +9,8 @@ Install with: pip install langchain langchain-community langchain-openai chromad
 import os
 import asyncio
 import glob
+import requests
+import tarfile
 from datetime import datetime
 from uuid import uuid4
 import pytz
@@ -557,6 +559,44 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     import traceback
     traceback.print_exc()
 
+def download_sources():
+    """Download and extract sources from Google Drive if not present"""
+    
+    # Skip if sources already exist
+    if os.path.exists('sources') and len(os.listdir('sources')) > 2:
+        print("✅ Sources already exist, skipping download")
+        return
+    
+    print("📥 Downloading sources from Google Drive...")
+    
+    # Google Drive direct download link
+    # REPLACE FILE_ID with actual ID from Google Drive share link
+    DRIVE_FILE_ID = "1lFhoTtdORTs_M_7UkCPDYvOycImnW7X5"
+    DRIVE_URL = f"https://drive.google.com/uc?export=download&id={DRIVE_FILE_ID}"
+    
+    try:
+        # Download
+        response = requests.get(DRIVE_URL, timeout=300)
+        response.raise_for_status()
+        
+        with open('sources.tar.gz', 'wb') as f:
+            f.write(response.content)
+        
+        print("📦 Extracting sources...")
+        
+        # Extract
+        with tarfile.open('sources.tar.gz', 'r:gz') as tar:
+            tar.extractall()
+        
+        # Cleanup archive
+        os.remove('sources.tar.gz')
+        
+        print("✅ Sources downloaded and extracted successfully!")
+        
+    except Exception as e:
+        print(f"❌ Failed to download sources: {e}")
+        print("Using existing sources if available")
+
 def main():
     if not TOKEN or not API_KEY:
         print("❌ Missing environment variables!", flush=True)
@@ -603,4 +643,5 @@ def main():
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
+    download_sources()  # Download from Drive if needed
     main()
