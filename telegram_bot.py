@@ -364,12 +364,13 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print(f"\n🔍 INLINE QUERY: {query}", flush=True)
     
     try:
-        # Search vectorstore
-        docs = vectorstore.similarity_search(query, k=3)
+        # Search vectorstore (reduced to k=2 for speed)
+        docs = vectorstore.similarity_search(query, k=2)
         if not docs:
             return
         
-        context_text = "\n\n".join([doc.page_content[:500] for doc in docs])
+        # Reduced context size for faster processing
+        context_text = "\n\n".join([doc.page_content[:300] for doc in docs])
         
         # Generate brief answer with system prompt
         user_prompt = f"""Context from sources:
@@ -383,8 +384,18 @@ Provide a brief answer (2-3 sentences) suitable for sharing."""
             SystemMessage(content=SYSTEM_PROMPT),
             HumanMessage(content=user_prompt)
         ]
-        response = llm.invoke(messages)
-        answer = response.content
+        
+        # Add timeout to prevent "query too old" errors (Telegram has 30s limit)
+        try:
+            response = await asyncio.wait_for(
+                asyncio.to_thread(llm.invoke, messages),
+                timeout=25.0  # 25 seconds to stay under Telegram's 30s limit
+            )
+            answer = response.content
+        except asyncio.TimeoutError:
+            # Fallback if LLM is slow
+            answer = f"This question requires more research. Please ask me directly in chat for a detailed answer about: {query}"
+            print(f"⚠️ Inline query timed out, using fallback", flush=True)
         
         # Use plain text to avoid Markdown parse errors
         bot_username = context.bot.username or "UtopiaBot"
