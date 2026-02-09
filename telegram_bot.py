@@ -386,14 +386,25 @@ Provide a brief answer (2-3 sentences) suitable for sharing."""
         response = llm.invoke(messages)
         answer = response.content
         
-        # Create inline result
+        # Escape Markdown special characters to prevent parse errors
+        def escape_markdown(text):
+            """Escape Markdown special characters for Telegram"""
+            special_chars = ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']
+            for char in special_chars:
+                text = text.replace(char, '\\' + char)
+            return text
+        
+        # Create inline result with escaped content
+        escaped_answer = escape_markdown(answer)
+        bot_username = context.bot.username or "UtopiaBot"
+        
         results = [
             InlineQueryResultArticle(
                 id=str(uuid4()),
                 title=f"📖 {query[:50]}",
-                description=answer[:100] + "...",
+                description=answer[:100] + "..." if len(answer) > 100 else answer,
                 input_message_content=InputTextMessageContent(
-                    f"🕊️ **Ethiopian Orthodox Teaching**\n\n{answer}\n\n_Via @{context.bot.username}_",
+                    f"🕊️ *Ethiopian Orthodox Teaching*\n\n{escaped_answer}\n\n_Via @{bot_username}_",
                     parse_mode=ParseMode.MARKDOWN
                 )
             )
