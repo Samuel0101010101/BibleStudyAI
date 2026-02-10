@@ -12,6 +12,7 @@ import glob
 import requests
 import tarfile
 import time
+import shutil
 from datetime import datetime
 from uuid import uuid4
 import pytz
@@ -643,6 +644,26 @@ def download_sources():
             
             # Extract all
             tar.extractall(path=cwd)
+        
+        # Move extracted files into sources/ directory
+        print(f"📁 Organizing files into sources/...", flush=True)
+        os.makedirs(sources_path, exist_ok=True)
+        
+        # Move all .txt and .md files into sources/ (except test_curriculum.md)
+        moved_count = 0
+        for pattern in ['*.txt', '*.md']:
+            for file_path in glob.glob(os.path.join(cwd, pattern)):
+                filename = os.path.basename(file_path)
+                if filename != 'test_curriculum.md':  # Don't move fallback file
+                    dest_path = os.path.join(sources_path, filename)
+                    shutil.move(file_path, dest_path)
+                    moved_count += 1
+                    if moved_count <= 3:  # Show first 3 files
+                        print(f"   Moved: {filename}", flush=True)
+        
+        if moved_count > 3:
+            print(f"   ... and {moved_count - 3} more files", flush=True)
+        print(f"   ✅ Moved {moved_count} files to sources/", flush=True)
         
         # Cleanup archive
         os.remove(archive_path)
