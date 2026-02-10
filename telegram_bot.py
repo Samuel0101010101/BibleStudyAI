@@ -11,6 +11,7 @@ import asyncio
 import glob
 import requests
 import tarfile
+import time
 from datetime import datetime
 from uuid import uuid4
 import pytz
@@ -52,6 +53,9 @@ BOUNDARIES: For confession, deep spiritual direction, or life-altering decisions
 retriever = None
 llm = None
 vectorstore = None  # Exposed for inline queries and saint lookup
+
+# Inline query throttling
+last_inline_query_time = {}
 
 def load_all_sources():
     """Load all available document sources"""
@@ -354,36 +358,48 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Oops! Something went wrong. Try asking again? 🤔")
 
 async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle inline queries - returns fast search results without AI generation"""
+    """Handle inline queries - with throttling to prevent overload"""
     query = update.inline_query.query
+    user_id = update.inline_query.from_user.id
+    query_id = update.inline_query.id
     
-    # Require minimum 3 characters
-    if len(query) < 3:
+    # Require minimum 5 characters to reduce queries
+    if len(query) < 5:
         return
+    
+    # THROTTLING: Ignore if same user queried < 1.5 seconds ago
+    current_time = time.time()
+    if user_id in last_inline_query_time:
+        time_diff = current_time - last_inline_query_time[user_id]
+        if time_diff < 1.5:
+            print(f"⏭️ Skipping query (too soon): {query}", flush=True)
+            return
+    
+    last_inline_query_time[user_id] = current_time
     
     try:
         print(f"\n🔍 INLINE QUERY: {query}", flush=True)
+        start_time = time.time()
         
-        # Fast vector similarity search (< 1 second)
+        # Vector search
         docs = vectorstore.similarity_search(query, k=3)
+        search_time = time.time() - start_time
+        print(f"⏱️ Search took {search_time:.2f}s", flush=True)
         
         if not docs:
-            # No results found
-            bot_username = context.bot.username or "Utopia_AI_Tutor_Bot"
             results = [
                 InlineQueryResultArticle(
                     id="0",
                     title="No results found",
                     description="Try rephrasing your question",
                     input_message_content=InputTextMessageContent(
-                        message_text=f"No results found for: {query}\n\nTry asking the bot directly: @{bot_username}"
+                        message_text=f"No results found for: {query}\n\nTry asking @Utopia_AI_Tutor_Bot directly!"
                     )
                 )
             ]
         else:
             results = []
             for i, doc in enumerate(docs):
-                # Extract first 150 chars for preview
                 content = doc.page_content.strip()
                 preview = content[:150] + "..." if len(content) > 150 else content
                 
@@ -391,7 +407,6 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 filename = doc.metadata.get('filename', 'Unknown source')
                 source = filename.replace('sources/', '').replace('.txt', '').replace('.md', '')
                 
-                # Create inline result with full content (plain text to avoid parse errors)
                 result = InlineQueryResultArticle(
                     id=str(i),
                     title=f"📖 Result {i+1}: {source[:30]}",
@@ -402,9 +417,9 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 results.append(result)
         
-        # Respond quickly (< 2 seconds total)
         await update.inline_query.answer(results, cache_time=300)
-        print(f"✅ Inline results sent: {len(results)}", flush=True)
+        total_time = time.time() - start_time
+        print(f"✅ Inline response sent in {total_time:.2f}s", flush=True)
         
     except Exception as e:
         print(f"❌ Inline query error: {e}", flush=True)
