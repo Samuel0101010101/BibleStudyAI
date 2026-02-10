@@ -11,6 +11,9 @@ torch==2.10.0+cpu
 python-telegram-bot[job-queue]>=20.0
 python-dotenv>=1.0.0
 
+# Google Drive download utility
+gdown>=4.7.0
+
 # LangChain and AI
 langchain>=0.1.0
 langchain-community>=0.1.0

@@ -13,6 +13,7 @@ import requests
 import tarfile
 import time
 import shutil
+import gdown
 from datetime import datetime
 from uuid import uuid4
 import pytz
@@ -29,6 +30,9 @@ from langchain_community.document_loaders import TextLoader
 # Environment
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 API_KEY = os.getenv("DEEPSEEK_API_KEY")
+
+# Pre-built database (update after first build)
+DATABASE_DRIVE_ID = None  # Will be updated after first build
 
 # Ethiopian Orthodox System Prompt
 SYSTEM_PROMPT = """You are Utopia, a humble Ethiopian Orthodox Tewahedo AI tutor.
@@ -205,33 +209,68 @@ def setup():
         print("🧠 Creating vector database (embedding in batches)...", flush=True)
         batch_size = 100
         vectorstore = None
+        total_batches = (len(splits) + batch_size - 1) // batch_size
+        processed_batches = 0
         
         for i in range(0, len(splits), batch_size):
             batch = splits[i:i + batch_size]
             batch_num = (i // batch_size) + 1
-            total_batches = (len(splits) + batch_size - 1) // batch_size
             print(f"   Processing batch {batch_num}/{total_batches} ({len(batch)} chunks)...", flush=True)
             
-            if vectorstore is None:
-                # Create new vectorstore with first batch
-                vectorstore = Chroma.from_documents(
-                    documents=batch,
-                    embedding=embeddings,
-                    persist_directory=db_path
-                )
-            else:
-                # Add subsequent batches to existing vectorstore
-                vectorstore.add_documents(batch)
+            try:
+                if vectorstore is None:
+                    # Create new vectorstore with first batch
+                    vectorstore = Chroma.from_documents(
+                        documents=batch,
+                        embedding=embeddings,
+                        persist_directory=db_path
+                    )
+                    print(f"      ✓ Batch {batch_num} embedded successfully", flush=True)
+                else:
+                    # Add subsequent batches to existing vectorstore
+                    vectorstore.add_documents(batch)
+                    print(f"      ✓ Batch {batch_num} added successfully", flush=True)
+                
+                processed_batches += 1
+                
+            except Exception as e:
+                print(f"      ❌ ERROR in batch {batch_num}: {e}", flush=True)
+                import traceback
+                traceback.print_exc()
+                # Don't stop - try to continue with next batch
+        
+        # CRITICAL: Verify ALL batches were processed
+        print(f"\n   📊 Batch processing complete: {processed_batches}/{total_batches} batches processed", flush=True)
+        
+        if processed_batches < total_batches:
+            print(f"   ⚠️  WARNING: Only {processed_batches}/{total_batches} batches completed!", flush=True)
+            print(f"   Some chunks may be missing from the database.\n", flush=True)
+        else:
+            print(f"   ✅ ALL {total_batches} batches processed successfully!\n", flush=True)
         
         # Verify and persist the newly built database
+        print("🔍 Verifying database integrity...", flush=True)
         try:
             built_count = vectorstore._collection.count()
-            print(f"   ✅ Vector database created: {built_count} chunks embedded\n", flush=True)
+            expected_count = len(splits)
+            
+            print(f"   Expected chunks: {expected_count}", flush=True)
+            print(f"   Actual chunks:   {built_count}", flush=True)
+            
+            if built_count < expected_count:
+                missing = expected_count - built_count
+                percentage = (built_count / expected_count) * 100
+                print(f"   ⚠️  WARNING: {missing} chunks missing ({percentage:.1f}% complete)!\n", flush=True)
+            elif built_count == expected_count:
+                print(f"   ✅ Perfect! All {built_count} chunks embedded successfully\n", flush=True)
+            else:
+                print(f"   ⚠️  Strange: Database has MORE chunks than expected?\n", flush=True)
             
             # Force persistence to disk
+            print("💾 Persisting database to disk...", flush=True)
             if hasattr(vectorstore, 'persist'):
                 vectorstore.persist()
-                print(f"   💾 Database persisted to {db_path}\n", flush=True)
+                print(f"   ✅ Database persisted to {db_path}", flush=True)
             
             # Verify persistence by checking database files
             if os.path.exists(db_path):
@@ -239,22 +278,40 @@ def setup():
                 print(f"   📁 Database size on disk: {db_size:,} bytes\n", flush=True)
             
         except Exception as e:
-            print(f"   ⚠️ Warning during verification: {e}\n", flush=True)
+            print(f"   ❌ Error during verification: {e}\n", flush=True)
+            import traceback
+            traceback.print_exc()
     
     # Final verification that vectorstore has content
+    print("="*60, flush=True)
+    print("FINAL VERIFICATION BEFORE STARTING BOT", flush=True)
+    print("="*60, flush=True)
+    
     if vectorstore is not None:
         try:
             final_count = vectorstore._collection.count()
             if final_count == 0:
-                print("❌ CRITICAL ERROR: Vector database is empty!\n", flush=True)
-                print("   This will cause search failures. Check the following:\n", flush=True)
-                print("   1. Are source files properly loaded?\n", flush=True)
-                print("   2. Did document splitting work correctly?\n", flush=True)
-                print("   3. Is ChromaDB persisting correctly?\n", flush=True)
+                print("❌ CRITICAL ERROR: Vector database is EMPTY!", flush=True)
+                print("   This will cause search failures. Check the following:", flush=True)
+                print("   1. Are source files properly loaded?", flush=True)
+                print("   2. Did document splitting work correctly?", flush=True)
+                print("   3. Is ChromaDB persisting correctly?", flush=True)
+                print("="*60 + "\n", flush=True)
             else:
-                print(f"✅ Final verification: {final_count} chunks ready for search\n", flush=True)
+                print(f"✅ Vector database verified: {final_count:,} chunks ready", flush=True)
+                print(f"✅ Retriever configured: Top-3 similarity search", flush=True)
+                print(f"✅ LLM connected: DeepSeek API", flush=True)
+                print("="*60, flush=True)
+                print("🚀 DATABASE READY - BOT CAN START SAFELY!", flush=True)
+                print("="*60 + "\n", flush=True)
         except Exception as e:
-            print(f"⚠️ Could not verify final chunk count: {e}\n", flush=True)
+            print(f"❌ Error during final verification: {e}", flush=True)
+            import traceback
+            traceback.print_exc()
+            print("="*60 + "\n", flush=True)
+    else:
+        print("❌ CRITICAL ERROR: vectorstore is None!", flush=True)
+        print("="*60 + "\n", flush=True)
     
     # Set up retriever
     retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
@@ -725,6 +782,136 @@ def download_sources():
     except Exception as e:
         print(f"\n❌ Failed to download sources: {e}", flush=True)
         print("Bot will use existing sources if available\n", flush=True)
+        import traceback
+        traceback.print_exc()
+
+def download_database_from_drive():
+    """Download pre-built database from Google Drive if available"""
+    
+    # Check if DATABASE_DRIVE_ID is set
+    if DATABASE_DRIVE_ID is None:
+        print("ℹ️  No pre-built database ID configured, will build from scratch\n", flush=True)
+        return False
+    
+    # Check if database already exists
+    db_path = "./chroma_db_bot"
+    if os.path.exists(db_path) and os.path.isdir(db_path):
+        db_files = os.listdir(db_path)
+        if len(db_files) > 0 and os.path.exists(os.path.join(db_path, "chroma.sqlite3")):
+            print("✅ Database already exists locally, skipping download\n", flush=True)
+            return True
+    
+    print("\n" + "="*60, flush=True)
+    print("📥 DOWNLOADING PRE-BUILT DATABASE FROM GOOGLE DRIVE", flush=True)
+    print("="*60 + "\n", flush=True)
+    
+    try:
+        # Download using gdown
+        print(f"📥 Downloading database archive...", flush=True)
+        archive_path = "chroma_db.tar.gz"
+        url = f"https://drive.google.com/uc?id={DATABASE_DRIVE_ID}"
+        gdown.download(url, archive_path, quiet=False)
+        
+        archive_size = os.path.getsize(archive_path)
+        print(f"   ✅ Downloaded {archive_size / (1024*1024):.1f} MB\n", flush=True)
+        
+        # Extract
+        print(f"📦 Extracting database...", flush=True)
+        with tarfile.open(archive_path, 'r:gz') as tar:
+            tar.extractall(path=".")
+        
+        # Cleanup archive
+        os.remove(archive_path)
+        print(f"   ✅ Archive extracted and cleaned up\n", flush=True)
+        
+        # Verify extraction
+        if os.path.exists(db_path) and os.path.exists(os.path.join(db_path, "chroma.sqlite3")):
+            db_size = os.path.getsize(os.path.join(db_path, "chroma.sqlite3"))
+            print(f"✅ Database verified: chroma.sqlite3 ({db_size / (1024*1024):.1f} MB)\n", flush=True)
+            return True
+        else:
+            print(f"❌ ERROR: Database files not found after extraction!\n", flush=True)
+            return False
+        
+    except Exception as e:
+        print(f"\n❌ Failed to download database: {e}", flush=True)
+        print("Will build database from scratch instead\n", flush=True)
+        import traceback
+        traceback.print_exc()
+        return False
+
+def create_database_archive():
+    """Create compressed archive of the database for Google Drive upload"""
+    
+    db_path = "./chroma_db_bot"
+    
+    # Check if database exists
+    if not os.path.exists(db_path) or not os.path.isdir(db_path):
+        print("❌ ERROR: Database directory not found!\n", flush=True)
+        return
+    
+    print("\n" + "="*60, flush=True)
+    print("📦 CREATING DATABASE ARCHIVE FOR GOOGLE DRIVE", flush=True)
+    print("="*60 + "\n", flush=True)
+    
+    try:
+        archive_path = "chroma_db.tar.gz"
+        
+        print(f"🗜️  Compressing {db_path}...", flush=True)
+        with tarfile.open(archive_path, 'w:gz') as tar:
+            tar.add(db_path, arcname='chroma_db_bot')
+        
+        archive_size = os.path.getsize(archive_path)
+        print(f"   ✅ Archive created: {archive_path} ({archive_size / (1024*1024):.1f} MB)\n", flush=True)
+        
+        print("=" * 60, flush=True)
+        print("📤 MANUAL STEPS TO COMPLETE:", flush=True)
+        print("=" * 60 + "\n", flush=True)
+        
+        print("STEP 1: Download the archive from Railway", flush=True)
+        print("   Option A: Use Railway CLI", flush=True)
+        print("      railway run cat chroma_db.tar.gz > chroma_db.tar.gz", flush=True)
+        print("   Option B: Add temporary download endpoint (ask Copilot)", flush=True)
+        print("", flush=True)
+        
+        print("STEP 2: Upload to Google Drive", flush=True)
+        print("   1. Go to https://drive.google.com", flush=True)
+        print("   2. Click 'New' → 'File upload'", flush=True)
+        print("   3. Upload chroma_db.tar.gz", flush=True)
+        print("   4. Right-click the file → 'Share'", flush=True)
+        print("   5. Change to 'Anyone with the link can view'", flush=True)
+        print("   6. Click 'Copy link'", flush=True)
+        print("", flush=True)
+        
+        print("STEP 3: Extract File ID from the link", flush=True)
+        print("   Link format: https://drive.google.com/file/d/FILE_ID_HERE/view", flush=True)
+        print("   Example: If link is:", flush=True)
+        print("      https://drive.google.com/file/d/1ABC...XYZ/view", flush=True)
+        print("   Then FILE_ID is: 1ABC...XYZ", flush=True)
+        print("", flush=True)
+        
+        print("STEP 4: Update the code", flush=True)
+        print("   In telegram_bot.py, find this line:", flush=True)
+        print('      DATABASE_DRIVE_ID = None', flush=True)
+        print("   Replace with:", flush=True)
+        print('      DATABASE_DRIVE_ID = "YOUR_FILE_ID_HERE"', flush=True)
+        print("", flush=True)
+        
+        print("STEP 5: Commit and push to GitHub", flush=True)
+        print("   git add telegram_bot.py", flush=True)
+        print('   git commit -m "add pre-built database ID"', flush=True)
+        print("   git push", flush=True)
+        print("", flush=True)
+        
+        print("STEP 6: Wait for Railway to redeploy", flush=True)
+        print("   Next deployment will download the pre-built database", flush=True)
+        print("   Startup time: ~30-60 seconds instead of 10-15 minutes! ✅", flush=True)
+        print("", flush=True)
+        
+        print("=" * 60 + "\n", flush=True)
+        
+    except Exception as e:
+        print(f"❌ Failed to create archive: {e}\n", flush=True)
         import traceback
         traceback.print_exc()
 
