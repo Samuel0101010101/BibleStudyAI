@@ -32,7 +32,7 @@ TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 API_KEY = os.getenv("DEEPSEEK_API_KEY")
 
 # Pre-built database (update after first build)
-DATABASE_DRIVE_ID = None  # Will be updated after first build
+DATABASE_DRIVE_ID = "1yL5w_2kTB9HdvAxEZg9miXIawgRKh2R_"  # Pre-built database on Google Drive
 
 # Ethiopian Orthodox System Prompt
 SYSTEM_PROMPT = """You are Utopia, a humble Ethiopian Orthodox Tewahedo AI tutor.
