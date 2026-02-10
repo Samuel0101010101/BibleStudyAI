@@ -146,17 +146,34 @@ def setup():
     
     # Check if vector DB already exists
     db_path = "./chroma_db_bot"
-    if os.path.exists(db_path) and os.listdir(db_path):
-        # Load existing vector store (FAST - no re-embedding!)
-        print(f"📦 Loading existing vector database from {db_path}...", flush=True)
-        vectorstore = Chroma(
-            persist_directory=db_path,
-            embedding_function=embeddings
-        )
-        print("   ✅ Vector database loaded (no rebuild needed)\n", flush=True)
+    if os.path.exists(db_path) and os.path.isdir(db_path):
+        db_files = os.listdir(db_path)
+        if len(db_files) > 0:
+            # Load existing vector store (FAST - no re-embedding!)
+            print(f"📦 Loading existing vector database from {db_path}...", flush=True)
+            print(f"   Found {len(db_files)} files in database", flush=True)
+            vectorstore = Chroma(
+                persist_directory=db_path,
+                embedding_function=embeddings
+            )
+            
+            # Verify it loaded correctly
+            try:
+                collection = vectorstore._collection
+                count = collection.count()
+                print(f"   ✅ Vector database loaded: {count} chunks ready\n", flush=True)
+            except Exception as e:
+                print(f"   ⚠️  Could not verify chunk count: {e}\n", flush=True)
+        else:
+            print(f"⚠️ Database directory empty, rebuilding...\n", flush=True)
+            vectorstore = None
     else:
-        # Build new vector store (SLOW - first time only)
-        print("🏗️  Building vector database (first time - will be slow)...", flush=True)
+        print(f"🏗️  No existing database, will build new one...\n", flush=True)
+        vectorstore = None
+    
+    # Build new vector store if needed (SLOW - first time only)
+    if vectorstore is None:
+        print("🏗️  Building vector database from sources...", flush=True)
         
         # Load all document sources
         print("📚 Loading sources...", flush=True)
@@ -581,40 +598,71 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def download_sources():
     """Download and extract sources from Google Drive if not present"""
     
-    # Skip if sources already exist
-    if os.path.exists('sources') and len(os.listdir('sources')) > 2:
-        print("✅ Sources already exist, skipping download")
-        return
+    # Get current working directory
+    cwd = os.getcwd()
+    sources_path = os.path.join(cwd, 'sources')
     
-    print("📥 Downloading sources from Google Drive...")
+    print(f"\n\ud83d� Current directory: {cwd}", flush=True)
+    print(f"\ud83d� Looking for sources at: {sources_path}", flush=True)
+    
+    # Skip if sources already exist with content
+    if os.path.exists(sources_path):
+        file_count = len([f for f in os.listdir(sources_path) if f.endswith(('.txt', '.md'))])
+        if file_count > 2:
+            print(f"✅ Sources already exist: {file_count} files found, skipping download\n", flush=True)
+            return
+        else:
+            print(f"⚠️ Only {file_count} files found, re-downloading...\n", flush=True)
+    else:
+        print("📥 Sources not found, downloading from Google Drive...\n", flush=True)
     
     # Google Drive direct download link
-    # REPLACE FILE_ID with actual ID from Google Drive share link
     DRIVE_FILE_ID = "1lFhoTtdORTs_M_7UkCPDYvOycImnW7X5"
     DRIVE_URL = f"https://drive.google.com/uc?export=download&id={DRIVE_FILE_ID}"
     
     try:
         # Download
+        print(f"📥 Downloading from Google Drive...", flush=True)
         response = requests.get(DRIVE_URL, timeout=300)
         response.raise_for_status()
         
-        with open('sources.tar.gz', 'wb') as f:
+        archive_path = os.path.join(cwd, 'sources.tar.gz')
+        with open(archive_path, 'wb') as f:
             f.write(response.content)
         
-        print("📦 Extracting sources...")
+        archive_size = os.path.getsize(archive_path)
+        print(f"   ✅ Downloaded {archive_size:,} bytes", flush=True)
         
         # Extract
-        with tarfile.open('sources.tar.gz', 'r:gz') as tar:
-            tar.extractall()
+        print(f"\ud83d� Extracting to {cwd}...", flush=True)
+        with tarfile.open(archive_path, 'r:gz') as tar:
+            # List what's being extracted (first 5 files)
+            members = tar.getmembers()[:5]
+            for member in members:
+                print(f"   Extracting: {member.name}", flush=True)
+            
+            # Extract all
+            tar.extractall(path=cwd)
         
         # Cleanup archive
-        os.remove('sources.tar.gz')
+        os.remove(archive_path)
+        print(f"   ✅ Archive cleaned up", flush=True)
         
-        print("✅ Sources downloaded and extracted successfully!")
+        # Verify extraction
+        if os.path.exists(sources_path):
+            file_count = len([f for f in os.listdir(sources_path) if f.endswith(('.txt', '.md'))])
+            print(f"\n✅ Sources extracted successfully: {file_count} files in {sources_path}\n", flush=True)
+        else:
+            print(f"\n❌ ERROR: sources/ directory not found after extraction!\n", flush=True)
+            print(f"   Contents of {cwd}:", flush=True)
+            for item in os.listdir(cwd)[:10]:
+                print(f"   - {item}", flush=True)
         
     except Exception as e:
-        print(f"❌ Failed to download sources: {e}")
-        print("Using existing sources if available")
+        print(f"\n❌ Failed to download sources: {e}", flush=True)
+        print("Bot will use existing sources if available\n", flush=True)
+        import traceback
+        traceback.print_exc()
 
 def main():
     if not TOKEN or not API_KEY:
