@@ -354,66 +354,57 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Oops! Something went wrong. Try asking again? 🤔")
 
 async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle inline queries for sharing answers in any chat"""
+    """Handle inline queries - returns fast search results without AI generation"""
     query = update.inline_query.query
     
-    if not query or len(query.strip()) < 3:
-        # Return empty or help message for short queries
+    # Require minimum 3 characters
+    if len(query) < 3:
         return
     
-    print(f"\n🔍 INLINE QUERY: {query}", flush=True)
-    
     try:
-        # Search vectorstore (reduced to k=2 for speed)
-        docs = vectorstore.similarity_search(query, k=2)
+        print(f"\n🔍 INLINE QUERY: {query}", flush=True)
+        
+        # Fast vector similarity search (< 1 second)
+        docs = vectorstore.similarity_search(query, k=3)
+        
         if not docs:
-            return
-        
-        # Reduced context size for faster processing
-        context_text = "\n\n".join([doc.page_content[:300] for doc in docs])
-        
-        # Generate brief answer with system prompt
-        user_prompt = f"""Context from sources:
-{context_text}
-
-Question: {query}
-
-Provide a brief answer (2-3 sentences) suitable for sharing."""
-        
-        messages = [
-            SystemMessage(content=SYSTEM_PROMPT),
-            HumanMessage(content=user_prompt)
-        ]
-        
-        # Add timeout to prevent "query too old" errors (Telegram has 30s limit)
-        try:
-            response = await asyncio.wait_for(
-                asyncio.to_thread(llm.invoke, messages),
-                timeout=25.0  # 25 seconds to stay under Telegram's 30s limit
-            )
-            answer = response.content
-        except asyncio.TimeoutError:
-            # Fallback if LLM is slow
-            answer = f"This question requires more research. Please ask me directly in chat for a detailed answer about: {query}"
-            print(f"⚠️ Inline query timed out, using fallback", flush=True)
-        
-        # Use plain text to avoid Markdown parse errors
-        bot_username = context.bot.username or "UtopiaBot"
-        
-        results = [
-            InlineQueryResultArticle(
-                id=str(uuid4()),
-                title=f"📖 {query[:50]}",
-                description=answer[:100] + "..." if len(answer) > 100 else answer,
-                input_message_content=InputTextMessageContent(
-                    f"🕊️ Ethiopian Orthodox Teaching\n\n{answer}\n\n(Via @{bot_username})"
-                    # No parse_mode = plain text (no Markdown parsing errors!)
+            # No results found
+            bot_username = context.bot.username or "Utopia_AI_Tutor_Bot"
+            results = [
+                InlineQueryResultArticle(
+                    id="0",
+                    title="No results found",
+                    description="Try rephrasing your question",
+                    input_message_content=InputTextMessageContent(
+                        message_text=f"No results found for: {query}\n\nTry asking the bot directly: @{bot_username}"
+                    )
                 )
-            )
-        ]
+            ]
+        else:
+            results = []
+            for i, doc in enumerate(docs):
+                # Extract first 150 chars for preview
+                content = doc.page_content.strip()
+                preview = content[:150] + "..." if len(content) > 150 else content
+                
+                # Get source filename from metadata
+                filename = doc.metadata.get('filename', 'Unknown source')
+                source = filename.replace('sources/', '').replace('.txt', '').replace('.md', '')
+                
+                # Create inline result with full content (plain text to avoid parse errors)
+                result = InlineQueryResultArticle(
+                    id=str(i),
+                    title=f"📖 Result {i+1}: {source[:30]}",
+                    description=preview,
+                    input_message_content=InputTextMessageContent(
+                        message_text=f"Question: {query}\n\n{content}\n\n(Source: {source})"
+                    )
+                )
+                results.append(result)
         
+        # Respond quickly (< 2 seconds total)
         await update.inline_query.answer(results, cache_time=300)
-        print(f"✅ Inline result sent", flush=True)
+        print(f"✅ Inline results sent: {len(results)}", flush=True)
         
     except Exception as e:
         print(f"❌ Inline query error: {e}", flush=True)
