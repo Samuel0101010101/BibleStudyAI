@@ -602,8 +602,8 @@ def download_sources():
     cwd = os.getcwd()
     sources_path = os.path.join(cwd, 'sources')
     
-    print(f"\n\ud83d� Current directory: {cwd}", flush=True)
-    print(f"\ud83d� Looking for sources at: {sources_path}", flush=True)
+    print(f"\n📂 Current directory: {cwd}", flush=True)
+    print(f"📂 Looking for sources at: {sources_path}", flush=True)
     
     # Skip if sources already exist with content
     if os.path.exists(sources_path):
@@ -634,7 +634,7 @@ def download_sources():
         print(f"   ✅ Downloaded {archive_size:,} bytes", flush=True)
         
         # Extract
-        print(f"\ud83d� Extracting to {cwd}...", flush=True)
+        print(f"📦 Extracting to {cwd}...", flush=True)
         with tarfile.open(archive_path, 'r:gz') as tar:
             # List what's being extracted (first 5 files)
             members = tar.getmembers()[:5]
