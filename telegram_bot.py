@@ -136,86 +136,95 @@ def load_all_sources():
 def setup():
     global retriever, llm, vectorstore
     print("\n" + "="*60, flush=True)
-    print("THEOLOGY TUTOR BOT - RAG SYSTEM", flush=True)
+    print("THEOLOGY TUTOR BOT - RAG SYSTEM INITIALIZATION", flush=True)
     print("="*60 + "\n", flush=True)
     
     print(f"✅ Token: {TOKEN[:15]}...", flush=True)
     print(f"✅ API Key: {API_KEY[:15]}...\n", flush=True)
     
-    # Set up embeddings model first
+    # STEP 1: Try to download pre-built database from Google Drive
+    download_database_from_drive()
+    
+    # STEP 2: Set up embeddings model
     print("🧠 Loading embeddings model...", flush=True)
     embeddings = HuggingFaceEmbeddings(
         model_name="sentence-transformers/all-MiniLM-L6-v2"
     )
     print("   ✅ Embeddings model ready\n", flush=True)
     
-    # Check if vector DB already exists
+    # STEP 3: Check if valid database exists
     db_path = "./chroma_db_bot"
-    if os.path.exists(db_path) and os.path.isdir(db_path):
-        db_files = os.listdir(db_path)
-        if len(db_files) > 0:
-            # Load existing vector store (FAST - no re-embedding!)
-            print(f"📦 Loading existing vector database from {db_path}...", flush=True)
-            print(f"   Found {len(db_files)} files in database", flush=True)
-            vectorstore = Chroma(
-                persist_directory=db_path,
-                embedding_function=embeddings
-            )
-            
-            # Verify it loaded correctly
-            try:
-                collection = vectorstore._collection
-                count = collection.count()
-                if count == 0:
-                    print(f"   ⚠️ WARNING: Database loaded but contains 0 chunks!\n", flush=True)
-                    print(f"   🗑️ Deleting corrupted database and rebuilding...\n", flush=True)
-                    vectorstore = None
-                    # Delete the corrupted database directory
-                    import shutil
-                    shutil.rmtree(db_path, ignore_errors=True)
-                else:
-                    print(f"   ✅ Vector database loaded: {count} chunks ready\n", flush=True)
-            except Exception as e:
-                print(f"   ⚠️ Error verifying database: {e}\n", flush=True)
-                print(f"   🗑️ Deleting corrupted database and rebuilding...\n", flush=True)
-                vectorstore = None
-                import shutil
-                shutil.rmtree(db_path, ignore_errors=True)
-        else:
-            print(f"⚠️ Database directory empty, rebuilding...\n", flush=True)
-            vectorstore = None
-    else:
-        print(f"🏗️  No existing database, will build new one...\n", flush=True)
-        vectorstore = None
+    vectorstore = None
+    database_is_valid = False
     
-    # Build new vector store if needed (SLOW - first time only)
-    if vectorstore is None:
-        print("🏗️  Building vector database from sources...", flush=True)
+    if os.path.exists(db_path) and os.path.isdir(db_path):
+        if os.path.exists(os.path.join(db_path, "chroma.sqlite3")):
+            print(f"📦 Found existing database at {db_path}", flush=True)
+            print(f"   Attempting to load...\n", flush=True)
+            
+            try:
+                # Load the database
+                vectorstore = Chroma(
+                    persist_directory=db_path,
+                    embedding_function=embeddings
+                )
+                
+                # Verify it has content
+                count = vectorstore._collection.count()
+                
+                if count > 0:
+                    print(f"   ✅ Database loaded successfully: {count:,} chunks ready", flush=True)
+                    database_is_valid = True
+                else:
+                    print(f"   ⚠️ Database loaded but contains 0 chunks - invalid!", flush=True)
+                    print(f"   🗑️ Removing corrupted database...\n", flush=True)
+                    vectorstore = None
+                    shutil.rmtree(db_path, ignore_errors=True)
+                    
+            except Exception as e:
+                print(f"   ❌ Error loading database: {e}", flush=True)
+                print(f"   🗑️ Removing corrupted database...\n", flush=True)
+                vectorstore = None
+                shutil.rmtree(db_path, ignore_errors=True)
+    
+    # STEP 4: Build database if needed (FIRST TIME ONLY)
+    if not database_is_valid:
+        print("\n" + "="*60, flush=True)
+        print("🏗️ BUILDING DATABASE - FIRST TIME ONLY", flush=True)
+        print("="*60, flush=True)
+        print("⏱️  Estimated time: 10-15 minutes", flush=True)
+        print("📌 This only happens once - future startups take ~30 seconds!", flush=True)
+        print("="*60 + "\n", flush=True)
         
         # Load all document sources
-        print("📚 Loading sources...", flush=True)
+        print("📚 Loading all source files...", flush=True)
         documents = load_all_sources()
+        print(f"   ✅ Loaded {len(documents)} documents\n", flush=True)
         
         # Split documents into chunks
-        print("✂️  Splitting into chunks...", flush=True)
+        print("✂️  Splitting documents into chunks...", flush=True)
         text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=3000,  # Doubled to reduce chunk count (faster startup)
-            chunk_overlap=300  # Proportional increase
+            chunk_size=3000,
+            chunk_overlap=300
         )
         splits = text_splitter.split_documents(documents)
-        print(f"   Created {len(splits)} chunks\n", flush=True)
+        total_chunks = len(splits)
+        print(f"   ✅ Created {total_chunks:,} chunks\n", flush=True)
         
-        # Create embeddings and vector store in batches (avoid memory issues)
-        print("🧠 Creating vector database (embedding in batches)...", flush=True)
-        batch_size = 100
+        # Create embeddings and vector store in batches
+        print("🧠 Embedding chunks and building vector database...", flush=True)
+        print(f"   Using batch size: 2000 (optimized for 8GB RAM)\n", flush=True)
+        
+        batch_size = 2000  # Increased from 100 to 2000 for faster building
         vectorstore = None
-        total_batches = (len(splits) + batch_size - 1) // batch_size
+        total_batches = (total_chunks + batch_size - 1) // batch_size
         processed_batches = 0
         
-        for i in range(0, len(splits), batch_size):
+        for i in range(0, total_chunks, batch_size):
             batch = splits[i:i + batch_size]
             batch_num = (i // batch_size) + 1
-            print(f"   Processing batch {batch_num}/{total_batches} ({len(batch)} chunks)...", flush=True)
+            
+            print(f"   Processing batch {batch_num}/{total_batches} ({len(batch):,} chunks)...", flush=True)
             
             try:
                 if vectorstore is None:
@@ -225,108 +234,113 @@ def setup():
                         embedding=embeddings,
                         persist_directory=db_path
                     )
-                    print(f"      ✓ Batch {batch_num} embedded successfully", flush=True)
                 else:
                     # Add subsequent batches to existing vectorstore
                     vectorstore.add_documents(batch)
-                    print(f"      ✓ Batch {batch_num} added successfully", flush=True)
                 
                 processed_batches += 1
+                print(f"      ✓ Batch {batch_num}/{total_batches} completed", flush=True)
                 
             except Exception as e:
                 print(f"      ❌ ERROR in batch {batch_num}: {e}", flush=True)
                 import traceback
                 traceback.print_exc()
-                # Don't stop - try to continue with next batch
+                print(f"      Attempting to continue with next batch...", flush=True)
         
-        # CRITICAL: Verify ALL batches were processed
-        print(f"\n   📊 Batch processing complete: {processed_batches}/{total_batches} batches processed", flush=True)
+        print(f"\n   📊 Batch processing complete: {processed_batches}/{total_batches} batches processed\n", flush=True)
         
+        # Verify ALL batches were processed
         if processed_batches < total_batches:
-            print(f"   ⚠️  WARNING: Only {processed_batches}/{total_batches} batches completed!", flush=True)
+            print(f"   ⚠️ WARNING: Only {processed_batches}/{total_batches} batches completed!", flush=True)
             print(f"   Some chunks may be missing from the database.\n", flush=True)
         else:
             print(f"   ✅ ALL {total_batches} batches processed successfully!\n", flush=True)
         
-        # Verify and persist the newly built database
+        # Verify database integrity
         print("🔍 Verifying database integrity...", flush=True)
         try:
             built_count = vectorstore._collection.count()
-            expected_count = len(splits)
             
-            print(f"   Expected chunks: {expected_count}", flush=True)
-            print(f"   Actual chunks:   {built_count}", flush=True)
+            print(f"   Expected chunks: {total_chunks:,}", flush=True)
+            print(f"   Actual chunks:   {built_count:,}", flush=True)
             
-            if built_count < expected_count:
-                missing = expected_count - built_count
-                percentage = (built_count / expected_count) * 100
-                print(f"   ⚠️  WARNING: {missing} chunks missing ({percentage:.1f}% complete)!\n", flush=True)
-            elif built_count == expected_count:
-                print(f"   ✅ Perfect! All {built_count} chunks embedded successfully\n", flush=True)
-            else:
-                print(f"   ⚠️  Strange: Database has MORE chunks than expected?\n", flush=True)
+            if built_count < total_chunks:
+                missing = total_chunks - built_count
+                percentage = (built_count / total_chunks) * 100
+                print(f"   ⚠️ WARNING: {missing:,} chunks missing ({percentage:.1f}% complete)!", flush=True)
+            elif built_count == total_chunks:
+                print(f"   ✅ Perfect! All {built_count:,} chunks embedded successfully!", flush=True)
             
-            # Force persistence to disk
-            print("💾 Persisting database to disk...", flush=True)
+            # Force persistence
+            print("\n💾 Persisting database to disk...", flush=True)
             if hasattr(vectorstore, 'persist'):
                 vectorstore.persist()
-                print(f"   ✅ Database persisted to {db_path}", flush=True)
             
-            # Verify persistence by checking database files
             if os.path.exists(db_path):
                 db_size = sum(os.path.getsize(os.path.join(db_path, f)) for f in os.listdir(db_path) if os.path.isfile(os.path.join(db_path, f)))
-                print(f"   📁 Database size on disk: {db_size:,} bytes\n", flush=True)
+                print(f"   ✅ Database saved: {db_size / (1024*1024):.1f} MB on disk\n", flush=True)
+            
+            # SUCCESS - Create archive for Google Drive upload
+            print("="*60, flush=True)
+            print("✅ DATABASE BUILD COMPLETE!", flush=True)
+            print("="*60, flush=True)
+            print(f"   Total chunks: {built_count:,}", flush=True)
+            print(f"   Database size: {db_size / (1024*1024):.1f} MB", flush=True)
+            print("="*60 + "\n", flush=True)
+            
+            # Create archive for future deployments
+            create_database_archive()
             
         except Exception as e:
             print(f"   ❌ Error during verification: {e}\n", flush=True)
             import traceback
             traceback.print_exc()
+            import traceback
+            traceback.print_exc()
     
-    # Final verification that vectorstore has content
+    # STEP 5: Final verification and setup
     print("="*60, flush=True)
-    print("FINAL VERIFICATION BEFORE STARTING BOT", flush=True)
+    print("FINAL SYSTEM VERIFICATION", flush=True)
     print("="*60, flush=True)
     
     if vectorstore is not None:
         try:
             final_count = vectorstore._collection.count()
+            
             if final_count == 0:
-                print("❌ CRITICAL ERROR: Vector database is EMPTY!", flush=True)
-                print("   This will cause search failures. Check the following:", flush=True)
-                print("   1. Are source files properly loaded?", flush=True)
-                print("   2. Did document splitting work correctly?", flush=True)
-                print("   3. Is ChromaDB persisting correctly?", flush=True)
+                print("❌ CRITICAL ERROR: Database is EMPTY!", flush=True)
+                print("   Bot cannot function without a valid database.", flush=True)
+                print("   Please check logs above for errors during building/loading.", flush=True)
                 print("="*60 + "\n", flush=True)
+                raise RuntimeError("Vector database is empty - cannot start bot")
             else:
-                print(f"✅ Vector database verified: {final_count:,} chunks ready", flush=True)
+                print(f"✅ Database ready: {final_count:,} chunks loaded", flush=True)
+                
+                # Set up retriever
+                retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
                 print(f"✅ Retriever configured: Top-3 similarity search", flush=True)
+                
+                # Set up DeepSeek LLM
+                llm = ChatOpenAI(
+                    model="deepseek-chat",
+                    api_key=API_KEY,
+                    base_url="https://api.deepseek.com",
+                    temperature=0
+                )
                 print(f"✅ LLM connected: DeepSeek API", flush=True)
+                
                 print("="*60, flush=True)
-                print("🚀 DATABASE READY - BOT CAN START SAFELY!", flush=True)
+                print("🎉 ALL SYSTEMS READY - BOT CAN START!", flush=True)
                 print("="*60 + "\n", flush=True)
+                
         except Exception as e:
-            print(f"❌ Error during final verification: {e}", flush=True)
+            print(f"❌ Fatal error during final verification: {e}", flush=True)
             import traceback
             traceback.print_exc()
-            print("="*60 + "\n", flush=True)
+            raise
     else:
         print("❌ CRITICAL ERROR: vectorstore is None!", flush=True)
-        print("="*60 + "\n", flush=True)
-    
-    # Set up retriever
-    retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
-    print("   ✅ Retriever ready (k=3)\n", flush=True)
-    
-    # Set up DeepSeek LLM
-    print("🤖 Connecting to DeepSeek...", flush=True)
-    llm = ChatOpenAI(
-        model="deepseek-chat",
-        api_key=API_KEY,
-        base_url="https://api.deepseek.com",
-        temperature=0
-    )
-    
-    print("✅ RAG system ready!\n", flush=True)
+        raise RuntimeError("Failed to create or load vector database")
 
 def ask_question(question, conversation_history=None):
     """Ask question using RAG system with conversation memory"""
