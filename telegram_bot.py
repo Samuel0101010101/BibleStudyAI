@@ -162,9 +162,21 @@ def setup():
             try:
                 collection = vectorstore._collection
                 count = collection.count()
-                print(f"   ✅ Vector database loaded: {count} chunks ready\n", flush=True)
+                if count == 0:
+                    print(f"   ⚠️ WARNING: Database loaded but contains 0 chunks!\n", flush=True)
+                    print(f"   🗑️ Deleting corrupted database and rebuilding...\n", flush=True)
+                    vectorstore = None
+                    # Delete the corrupted database directory
+                    import shutil
+                    shutil.rmtree(db_path, ignore_errors=True)
+                else:
+                    print(f"   ✅ Vector database loaded: {count} chunks ready\n", flush=True)
             except Exception as e:
-                print(f"   ⚠️  Could not verify chunk count: {e}\n", flush=True)
+                print(f"   ⚠️ Error verifying database: {e}\n", flush=True)
+                print(f"   🗑️ Deleting corrupted database and rebuilding...\n", flush=True)
+                vectorstore = None
+                import shutil
+                shutil.rmtree(db_path, ignore_errors=True)
         else:
             print(f"⚠️ Database directory empty, rebuilding...\n", flush=True)
             vectorstore = None
@@ -211,7 +223,38 @@ def setup():
                 # Add subsequent batches to existing vectorstore
                 vectorstore.add_documents(batch)
         
-        print("   ✅ Vector database created and persisted\n", flush=True)
+        # Verify and persist the newly built database
+        try:
+            built_count = vectorstore._collection.count()
+            print(f"   ✅ Vector database created: {built_count} chunks embedded\n", flush=True)
+            
+            # Force persistence to disk
+            if hasattr(vectorstore, 'persist'):
+                vectorstore.persist()
+                print(f"   💾 Database persisted to {db_path}\n", flush=True)
+            
+            # Verify persistence by checking database files
+            if os.path.exists(db_path):
+                db_size = sum(os.path.getsize(os.path.join(db_path, f)) for f in os.listdir(db_path) if os.path.isfile(os.path.join(db_path, f)))
+                print(f"   📁 Database size on disk: {db_size:,} bytes\n", flush=True)
+            
+        except Exception as e:
+            print(f"   ⚠️ Warning during verification: {e}\n", flush=True)
+    
+    # Final verification that vectorstore has content
+    if vectorstore is not None:
+        try:
+            final_count = vectorstore._collection.count()
+            if final_count == 0:
+                print("❌ CRITICAL ERROR: Vector database is empty!\n", flush=True)
+                print("   This will cause search failures. Check the following:\n", flush=True)
+                print("   1. Are source files properly loaded?\n", flush=True)
+                print("   2. Did document splitting work correctly?\n", flush=True)
+                print("   3. Is ChromaDB persisting correctly?\n", flush=True)
+            else:
+                print(f"✅ Final verification: {final_count} chunks ready for search\n", flush=True)
+        except Exception as e:
+            print(f"⚠️ Could not verify final chunk count: {e}\n", flush=True)
     
     # Set up retriever
     retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
