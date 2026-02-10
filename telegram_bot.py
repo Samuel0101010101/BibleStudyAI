@@ -495,15 +495,15 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.inline_query.from_user.id
     query_id = update.inline_query.id
     
-    # Require minimum 5 characters to reduce queries
-    if len(query) < 5:
+    # Require minimum 4 characters to reduce queries
+    if len(query) < 4:
         return
     
-    # THROTTLING: Ignore if same user queried < 1.5 seconds ago
+    # THROTTLING: Ignore if same user queried < 0.5 seconds ago
     current_time = time.time()
     if user_id in last_inline_query_time:
         time_diff = current_time - last_inline_query_time[user_id]
-        if time_diff < 1.5:
+        if time_diff < 0.5:
             print(f"⏭️ Skipping query (too soon): {query}", flush=True)
             return
     
